@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'dart:async';
 import 'dart:convert';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AndroidAlarmManager.initialize();
   runApp(MyApp());
 }
 
@@ -58,7 +61,6 @@ class Task {
 
 class TaskProvider with ChangeNotifier {
   List<Task> _tasks = [];
-  late Timer _timer;
 
   TaskProvider() {
     loadTasks();
@@ -94,15 +96,33 @@ class TaskProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  static void resetTasksInBackground() async {
+    final prefs = await SharedPreferences.getInstance();
+    final tasksData = prefs.getStringList('tasks') ?? [];
+    List<Task> tasks = tasksData.map((task) => Task.fromJson(jsonDecode(task))).toList();
+    for (var task in tasks) {
+      task.isDone = false;
+    }
+    prefs.setStringList('tasks', tasks.map((task) => jsonEncode(task.toJson())).toList());
+  }
+
   void _scheduleMidnightReset() {
     final now = DateTime.now();
     final nextMidnight = DateTime(now.year, now.month, now.day + 1);
     final difference = nextMidnight.difference(now);
 
-    _timer = Timer(difference, () {
+    Timer(difference, () {
       resetTasks();
-      _scheduleMidnightReset();
+      _scheduleMidnightReset(); // Reschedule for the next midnight
     });
+
+    AndroidAlarmManager.oneShotAt(
+      nextMidnight,
+      0, // Ensure to use a unique id if you have multiple alarms
+      resetTasksInBackground,
+      exact: true,
+      wakeup: true,
+    );
   }
 
   Future<void> loadTasks() async {
@@ -226,128 +246,128 @@ class _TaskScreenState extends State<TaskScreen> with TickerProviderStateMixin {
           ),
         ),
         body: Stack(
-          children: [
-            TabBarView(
-              children: [
-                Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: TextField(
-                        controller: _taskController,
-                        decoration: InputDecoration(
-                          labelText: 'New Task',
-                          suffixIcon: IconButton(
-                            icon: Icon(Icons.add),
-                            onPressed: _addTask,
-                          ),
-                          border: InputBorder.none, // Remove underline
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: taskProvider.tasks.length,
-                        itemBuilder: (context, index) {
-                          final task = taskProvider.tasks[index];
-                          return Dismissible(
-                            key: Key(task.title),
-                            onDismissed: (direction) {
-                              taskProvider.toggleTaskStatus(task);
-                            },
-                            background: Container(
-                              color: Colors.green,
-                              alignment: Alignment.centerLeft,
-                              padding: EdgeInsets.only(left: 20.0),
-                              child: Icon(Icons.check, color: Colors.black),
-                            ),
-                            child: ListTile(
-                              title: Text(task.title),
-                              leading: Icon(Icons.check, color: Colors.green, size: 20, shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
-                              trailing: IconButton(
-                                icon: AnimatedBuilder(
-                                  animation: _trashController,
-                                  builder: (context, child) {
-                                    return Transform.rotate(
-                                      angle: _trashController.value * 2.0 * 3.1416,
-                                      child: Icon(Icons.delete, color: Colors.grey, size: 20, shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
-                                    );
-                                  },
-                                ),
-                                onPressed: () {
-                                  _playTrashAnimation();
-                                  Future.delayed(Duration(milliseconds: 500), () {
-                                    taskProvider.deleteTask(task);
-                                  });
-                                },
-                              ),
-                              onTap: () {
-                                _scheduleNotification(task.title);
-                              },
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                ListView.builder(
-                  itemCount: taskProvider.doneTasks.length,
-                  itemBuilder: (context, index) {
-                    final task = taskProvider.doneTasks[index];
-                    return Dismissible(
-                      key: Key(task.title),
-                      onDismissed: (direction) {
-                        taskProvider.toggleTaskStatus(task);
-                      },
-                      background: Container(
-                        color: Colors.red,
-                        alignment: Alignment.centerLeft,
-                        padding: EdgeInsets.only(left: 20.0),
-                        child: Icon(Icons.close, color: Colors.black),
-                      ),
-                      child: ListTile(
-                        title: Text(task.title),
-                        leading: IconButton(
-                          icon: Icon(Icons.close, color: Colors.red, size: 20, shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
-                          onPressed: () {
-                            taskProvider.toggleTaskStatus(task);
-                          },
-                        ),
-                        trailing: IconButton(
-                          icon: AnimatedBuilder(
-                            animation: _trashController,
-                            builder: (context, child) {
-                              return Transform.rotate(
-                                angle: _trashController.value * 2.0 * 3.1416,
-                                child: Icon(Icons.delete, color: Colors.grey, size: 20, shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
-                              );
-                            },
-                          ),
-                          onPressed: () {
-                            _playTrashAnimation();
-                            Future.delayed(Duration(milliseconds: 500), () {
-                              taskProvider.deleteTask(task);
-                            });
-                          },
-                        ),
-                      ),
-                    );
+            children: [
+        TabBarView(
+        children: [
+        Column(
+        children: [
+        Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: TextField(
+          controller: _taskController,
+          decoration: InputDecoration(
+            labelText: 'New Task',
+            suffixIcon: IconButton(
+              icon: Icon(Icons.add),
+              onPressed: _addTask,
+            ),
+            border: InputBorder.none, // Remove underline
+          ),
+        ),
+      ),
+      Expanded(
+        child: ListView.builder(
+          itemCount: taskProvider.tasks.length,
+          itemBuilder: (context, index) {
+            final task = taskProvider.tasks[index];
+            return Dismissible(
+              key: Key(task.title),
+              onDismissed: (direction) {
+                taskProvider.toggleTaskStatus(task);
+              },
+              background: Container(
+                color: Colors.green,
+                alignment: Alignment.centerLeft,
+                padding: EdgeInsets.only(left: 20.0),
+                child: Icon(Icons.check, color: Colors.black),
+              ),
+              child: ListTile(
+                title: Text(task.title),
+                leading: Icon(Icons.check, color: Colors.green, size: 20, shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
+                trailing: IconButton(
+                  icon: AnimatedBuilder(
+                    animation: _trashController,
+                    builder: (context, child) {
+                      return Transform.rotate(
+                        angle: _trashController.value * 2.0 * 3.1416,
+                        child: Icon(Icons.delete, color: Colors.grey, size: 20, shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
+                      );
+                    },
+                  ),
+                  onPressed: () {
+                    _playTrashAnimation();
+                    Future.delayed(Duration(milliseconds: 500), () {
+                      taskProvider.deleteTask(task);
+                    });
                   },
                 ),
-              ],
-            ),
-            Positioned(
-              bottom: 16,
-              right: 16,
-              child: FloatingActionButton(
-                onPressed: widget.toggleTheme,
-                child: Icon(
-                  widget.isDarkMode ? Icons.wb_sunny : Icons.nights_stay,
+                onTap: () {
+                  _scheduleNotification(task.title);
+                },
+              ),
+            );
+          },
+        ),
+      ),
+      ],
+    ),
+    ListView.builder(
+    itemCount: taskProvider.doneTasks.length,
+    itemBuilder: (context, index) {
+    final task = taskProvider.doneTasks[index];
+    return Dismissible(
+    key: Key(task.title),
+    onDismissed: (direction) {
+    taskProvider.toggleTaskStatus(task);
+    },
+    background: Container(
+    color: Colors.red,
+    alignment: Alignment.centerLeft,
+    padding: EdgeInsets.only(left: 20.0),
+      child: Icon(Icons.close, color: Colors.black),
+    ),
+      child: ListTile(
+        title: Text(task.title),
+        leading: IconButton(
+          icon: Icon(Icons.close, color: Colors.red, size: 20, shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
+          onPressed: () {
+            taskProvider.toggleTaskStatus(task);
+          },
+        ),
+        trailing: IconButton(
+          icon: AnimatedBuilder(
+            animation: _trashController,
+            builder: (context, child) {
+              return Transform.rotate(
+                angle: _trashController.value * 2.0 * 3.1416,
+                child: Icon(Icons.delete, color: Colors.grey, size: 20, shadows: [Shadow(color: Colors.black, blurRadius: 2)]),
+              );
+            },
+          ),
+          onPressed: () {
+            _playTrashAnimation();
+            Future.delayed(Duration(milliseconds: 500), () {
+              taskProvider.deleteTask(task);
+            });
+          },
+        ),
+      ),
+    );
+    },
+    ),
+        ],
+        ),
+              Positioned(
+                bottom: 16,
+                right: 16,
+                child: FloatingActionButton(
+                  onPressed: widget.toggleTheme,
+                  child: Icon(
+                    widget.isDarkMode ? Icons.wb_sunny : Icons.nights_stay,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
         ),
       ),
     );
